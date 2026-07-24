@@ -1,0 +1,85 @@
+import { Scan, ScanDetail, Finding } from '@/types';
+import { MOCK_SCANS, MOCK_FINDINGS_BY_SCAN, getMockScanDetail } from './mockData';
+
+const SCANS_KEY = 'vapt_scans';
+const FINDINGS_KEY = 'vapt_findings';
+
+function loadScans(): Scan[] {
+  try {
+    const raw = localStorage.getItem(SCANS_KEY);
+    return raw ? JSON.parse(raw) : [...MOCK_SCANS];
+  } catch {
+    return [...MOCK_SCANS];
+  }
+}
+
+function saveScans(scans: Scan[]): void {
+  localStorage.setItem(SCANS_KEY, JSON.stringify(scans));
+}
+
+function loadFindings(): Record<string, Finding[]> {
+  try {
+    const raw = localStorage.getItem(FINDINGS_KEY);
+    return raw ? JSON.parse(raw) : { ...MOCK_FINDINGS_BY_SCAN };
+  } catch {
+    return { ...MOCK_FINDINGS_BY_SCAN };
+  }
+}
+
+function saveFindings(findings: Record<string, Finding[]>): void {
+  localStorage.setItem(FINDINGS_KEY, JSON.stringify(findings));
+}
+
+export function getAllScans(): Scan[] {
+  return loadScans().sort(
+    (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+  );
+}
+
+export function getScanById(id: string): ScanDetail | null {
+  const scans = loadScans();
+  const scan = scans.find(s => s.id === id);
+  if (!scan) return getMockScanDetail(id);
+  const allFindings = loadFindings();
+  const findings = allFindings[id] || MOCK_FINDINGS_BY_SCAN[id] || [];
+  return {
+    ...scan,
+    findings,
+    os_detection: 'Unknown (Frontend Demo)',
+    hostname: undefined,
+    mac_address: undefined,
+    total_ports_scanned: 1000,
+  };
+}
+
+export function createScan(scan: Scan): void {
+  const scans = loadScans();
+  scans.push(scan);
+  saveScans(scans);
+}
+
+export function updateScan(id: string, updates: Partial<Scan>): void {
+  const scans = loadScans();
+  const idx = scans.findIndex(s => s.id === id);
+  if (idx !== -1) {
+    scans[idx] = { ...scans[idx], ...updates };
+    saveScans(scans);
+  }
+}
+
+export function saveFindingsForScan(scanId: string, findings: Finding[]): void {
+  const allFindings = loadFindings();
+  allFindings[scanId] = findings;
+  saveFindings(allFindings);
+}
+
+export function deleteAllScans(): void {
+  localStorage.removeItem(SCANS_KEY);
+  localStorage.removeItem(FINDINGS_KEY);
+}
+
+// Initialize storage with mock data on first load
+if (!localStorage.getItem(SCANS_KEY)) {
+  saveScans(MOCK_SCANS);
+  saveFindings(MOCK_FINDINGS_BY_SCAN);
+}

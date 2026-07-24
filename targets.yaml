@@ -1,0 +1,49 @@
+# ============================================================
+# VAPT Pro — Authorized Scan Targets Configuration
+# /etc/vapt-app/targets.yaml  (or project root)
+# 
+# WARNING: Only add systems you are explicitly authorized to scan.
+# Unauthorized scanning may violate applicable laws (CFAA, GDPR, etc.).
+# ============================================================
+
+# Explicitly whitelisted individual IP addresses
+# These override RFC1918 enforcement for specific public/non-standard IPs
+ips:
+  - ip: "10.0.0.1"
+    comment: "Core router — Network team authorized"
+  - ip: "192.168.1.1"
+    comment: "Default gateway — Admin panel"
+  - ip: "172.16.0.1"
+    comment: "VPN gateway server"
+
+# Authorized subnets (CIDR notation, informational — actual enforcement uses RFC1918)
+# Non-RFC1918 subnets here are explicitly whitelisted for scanning
+subnets:
+  - subnet: "10.0.0.0/8"
+    comment: "Internal corporate network — Class A"
+  - subnet: "172.16.0.0/12"
+    comment: "Data center private range — Class B"
+  - subnet: "192.168.0.0/16"
+    comment: "Office LAN range — Class C"
+
+# Scan schedule (informational — used by cron/systemd timer if configured)
+schedule:
+  daily:
+    enabled: false
+    targets: ["192.168.1.0/24"]
+    profile: "fast"
+    time: "02:00"
+  
+  weekly:
+    enabled: false
+    targets: ["10.0.0.0/24"]
+    profile: "vulnerability"
+    day: "Sunday"
+    time: "03:00"
+
+# Exclusions — IPs that should NEVER be scanned (e.g., production critical systems)
+exclusions:
+  - ip: "10.0.0.100"
+    comment: "Production database — Excluded from automated scans"
+  - ip: "192.168.1.254"
+    comment: "Critical infrastructure — Manual approval required"

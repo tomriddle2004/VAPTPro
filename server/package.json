@@ -1,0 +1,25 @@
+{
+  "name": "vapt-pro-server",
+  "version": "2.4.1",
+  "description": "VAPT Pro — Linux-native Vulnerability Assessment & Reporting Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "express": "^4.18.3",
+    "js-yaml": "^4.1.0",
+    "pdfkit": "^0.15.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "keywords": ["vapt", "nmap", "security", "vulnerability", "linux"],
+  "license": "MIT"
+}
