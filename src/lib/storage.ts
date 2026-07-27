@@ -78,6 +78,25 @@ export function deleteAllScans(): void {
   localStorage.removeItem(FINDINGS_KEY);
 }
 
+export function getAllFindings(): Finding[] {
+  return Object.values(loadFindings()).flat();
+}
+
+export function getAllScanDetails(): ScanDetail[] {
+  const scans = loadScans();
+  const allFindings = loadFindings();
+  return scans
+    .filter(s => s.status === 'completed')
+    .map(scan => ({
+      ...scan,
+      findings: allFindings[scan.id] || MOCK_FINDINGS_BY_SCAN[scan.id] || [],
+      os_detection: undefined,
+      hostname: undefined,
+      mac_address: undefined,
+      total_ports_scanned: undefined,
+    }));
+}
+
 // Initialize storage with mock data on first load
 if (!localStorage.getItem(SCANS_KEY)) {
   saveScans(MOCK_SCANS);

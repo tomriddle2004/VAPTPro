@@ -398,6 +398,68 @@ app.get('/api/scans/:id/report', (req, res) => {
   res.json(summary);
 });
 
+// ── GET /api/scans/:id/logs (SSE) ──────────────────────────────────────────
+app.get('/api/scans/:id/logs', (req, res) => {
+  const { id } = req.params;
+  const scan = db.prepare('SELECT * FROM scans WHERE id = ?').get(id);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders();
+
+  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  if (!scan || scan.status !== 'running') {
+    if (scan?.status === 'completed') {
+      const findings = db.prepare('SELECT COUNT(*) as c FROM findings WHERE scan_id = ?').get(id);
+      send({ type: 'info', message: `Scan completed with ${findings?.c ?? 0} finding(s).` });
+    } else {
+      send({ type: 'error', message: 'Scan not found or not currently running.' });
+    }
+    send({ type: 'complete' });
+    res.end();
+    return;
+  }
+
+  const active = activeScans.get(id);
+  if (!active) {
+    send({ type: 'error', message: 'Scan process not found.' });
+    res.end();
+    return;
+  }
+
+  const heartbeat = setInterval(() => res.write(':heartbeat\n\n'), 15000);
+
+  const onStdout = (chunk) => {
+    chunk.toString().split('\n').forEach(line => {
+      if (line.trim()) send({ type: 'log', line: line.trim() });
+    });
+  };
+  const onStderr = (chunk) => {
+    const line = chunk.toString().trim();
+    if (line) send({ type: 'stderr', line });
+  };
+  const onClose = (code) => {
+    send({ type: 'complete', exitCode: code, status: code === 0 ? 'completed' : 'failed' });
+    clearInterval(heartbeat);
+    res.end();
+  };
+
+  active.process.stdout.on('data', onStdout);
+  active.process.stderr.on('data', onStderr);
+  active.process.on('close', onClose);
+
+  req.on('close', () => {
+    active.process.stdout.off('data', onStdout);
+    active.process.stderr.off('data', onStderr);
+    active.process.off('close', onClose);
+    clearInterval(heartbeat);
+  });
+});
+
 // ── GET /api/allowlist ──────────────────────────────────────────────────────
 app.get('/api/allowlist', (req, res) => {
   res.json(allowlist);

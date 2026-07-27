@@ -52,3 +52,56 @@ export interface AllowlistEntry {
   subnet?: string;
   comment?: string;
 }
+
+// ─── Scheduler ───────────────────────────────────────────────────────────────
+export type ScheduleFrequency = 'daily' | 'weekly' | 'monthly';
+
+export interface ScheduledScan {
+  id: string;
+  name: string;
+  target_ip: string;
+  scan_type: ScanType;
+  frequency: ScheduleFrequency;
+  time: string;
+  day_of_week?: number;
+  day_of_month?: number;
+  enabled: boolean;
+  created_at: string;
+  last_run?: string;
+  next_run: string;
+  run_count: number;
+}
+
+// ─── Compliance ───────────────────────────────────────────────────────────────
+export type ComplianceFrameworkId = 'owasp' | 'cis' | 'nist';
+
+export interface EvaluatedControl {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  weight: number;
+  remediation: string;
+  status: 'pass' | 'fail' | 'na';
+  affectedFindings: Finding[];
+  maxCVSS: number;
+}
+
+export interface FrameworkResult {
+  id: ComplianceFrameworkId;
+  name: string;
+  version: string;
+  score: number;
+  controls: EvaluatedControl[];
+  passed: number;
+  failed: number;
+  na: number;
+}
+
+export interface RemediationItem {
+  priority: number;
+  control: EvaluatedControl;
+  findingCount: number;
+  maxCVSS: number;
+  estimatedEffort: 'Low' | 'Medium' | 'High';
+}
