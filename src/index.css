@@ -3,7 +3,32 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
+  /* ─── DARK THEME (default) ─────────────────────────────────────────────── */
+  :root,
+  [data-theme="dark"] {
+    --bg-base:        #060d1a;
+    --bg-surface:     #0b1426;
+    --bg-elevated:    #111827;
+    --bg-card:        #0f172a;
+    --bg-input:       rgba(0,0,0,0.4);
+    --bg-hover:       rgba(255,255,255,0.03);
+
+    --border-subtle:  #1e293b;
+    --border-muted:   #334155;
+
+    --text-primary:   #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted:     #64748b;
+    --text-faint:     #334155;
+
+    --header-bg:      #0b1426;
+    --header-border:  rgba(16,185,129,0.25);
+
+    --scrollbar-track: #0f172a;
+    --scrollbar-thumb: #334155;
+    --scrollbar-thumb-hover: #475569;
+
+    /* Shadcn compat */
     --background: 222 47% 4%;
     --foreground: 213 31% 91%;
     --primary: 160 84% 39%;
@@ -13,9 +38,41 @@
     --radius: 0.5rem;
   }
 
-  * {
-    box-sizing: border-box;
+  /* ─── LIGHT THEME ──────────────────────────────────────────────────────── */
+  [data-theme="light"] {
+    --bg-base:        #f1f5f9;
+    --bg-surface:     #ffffff;
+    --bg-elevated:    #f8fafc;
+    --bg-card:        #ffffff;
+    --bg-input:       #f8fafc;
+    --bg-hover:       rgba(0,0,0,0.03);
+
+    --border-subtle:  #e2e8f0;
+    --border-muted:   #cbd5e1;
+
+    --text-primary:   #0f172a;
+    --text-secondary: #475569;
+    --text-muted:     #94a3b8;
+    --text-faint:     #cbd5e1;
+
+    --header-bg:      #ffffff;
+    --header-border:  rgba(16,185,129,0.3);
+
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1;
+    --scrollbar-thumb-hover: #94a3b8;
+
+    /* Shadcn compat */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --primary: 160 84% 39%;
+    --primary-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --ring: 160 84% 39%;
+    --radius: 0.5rem;
   }
+
+  * { box-sizing: border-box; }
 
   html {
     font-size: 16px;
@@ -23,59 +80,93 @@
   }
 
   body {
-    background-color: #060d1a;
-    color: #e2e8f0;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
-  /* Custom scrollbar */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: #0f172a;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: #334155;
-    border-radius: 3px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #475569;
-  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
-  /* Terminal font for mono elements */
   .font-mono {
-    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+    font-family: 'JetBrains Mono','Fira Code','Cascadia Code','Consolas','Courier New',monospace;
   }
 }
 
+/* ─── LIGHT MODE OVERRIDES ─────────────────────────────────────────────────
+   Uses attribute+class selectors (specificity 0,2,0) to beat Tailwind's
+   single-class utilities (specificity 0,1,0) without !important.
+──────────────────────────────────────────────────────────────────────────── */
+
+/* --- Backgrounds --- */
+[data-theme="light"] .bg-slate-900   { background-color: #ffffff; }
+[data-theme="light"] .bg-slate-800   { background-color: #f1f5f9; }
+[data-theme="light"] .bg-slate-700   { background-color: #e2e8f0; }
+[data-theme="light"] .bg-\[#0b1426\] { background-color: #ffffff; }
+[data-theme="light"] .bg-black\/40   { background-color: rgba(241,245,249,0.95); }
+[data-theme="light"] .bg-black\/30   { background-color: rgba(241,245,249,0.95); }
+[data-theme="light"] .bg-black\/20   { background-color: rgba(248,250,252,0.8);  }
+
+/* --- Borders --- */
+[data-theme="light"] .border-slate-800 { border-color: #e2e8f0; }
+[data-theme="light"] .border-slate-700 { border-color: #d1d5db; }
+[data-theme="light"] .border-slate-900 { border-color: #f1f5f9; }
+[data-theme="light"] .border-emerald-900\/40 { border-color: rgba(16,185,129,0.3); }
+
+/* --- Dividers --- */
+[data-theme="light"] .divide-slate-800 > * + * { border-color: #e2e8f0; }
+[data-theme="light"] .divide-slate-700 > * + * { border-color: #d1d5db; }
+
+/* --- Text (headings, body, secondary) --- */
+[data-theme="light"] .text-white   { color: #0f172a; }
+[data-theme="light"] .text-slate-300 { color: #1e293b; }
+[data-theme="light"] .text-slate-400 { color: #475569; }
+[data-theme="light"] .text-slate-500 { color: #64748b; }
+[data-theme="light"] .text-slate-600 { color: #94a3b8; }
+[data-theme="light"] .text-slate-700 { color: #94a3b8; }
+
+/* Preserve white text on colored CTA buttons & badges */
+[data-theme="light"] .bg-emerald-500 .text-white,
+[data-theme="light"] .bg-emerald-400 .text-white,
+[data-theme="light"] .bg-red-500 .text-white,
+[data-theme="light"] .text-black { color: inherit; }
+
+/* --- Hover tweaks --- */
+[data-theme="light"] .hover\:bg-white\/\[0\.02\]:hover { background-color: rgba(0,0,0,0.04); }
+[data-theme="light"] .hover\:bg-slate-700:hover { background-color: #e2e8f0; }
+[data-theme="light"] .hover\:text-white:hover { color: #0f172a; }
+
+/* --- Special surfaces that should stay dark (terminals, SVG canvas) --- */
+/* bg-black stays dark — used for terminal windows */
+/* bg-[#060d1a] stays dark — used for SVG topology canvas */
+
+/* ─── THEME-AWARE UTILITY CLASSES ───────────────────────────────────────── */
+.theme-bg-base      { background-color: var(--bg-base); }
+.theme-bg-surface   { background-color: var(--bg-surface); border-color: var(--border-subtle); }
+.theme-bg-elevated  { background-color: var(--bg-elevated); }
+.theme-border       { border-color: var(--border-subtle); }
+.theme-border-muted { border-color: var(--border-muted); }
+.theme-text         { color: var(--text-primary); }
+.theme-text-secondary { color: var(--text-secondary); }
+.theme-text-muted   { color: var(--text-muted); }
+
 @layer components {
-  /* Scan progress pulse animation */
   @keyframes scan-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
   }
+  .scan-pulse { animation: scan-pulse 1.5s ease-in-out infinite; }
 
-  .scan-pulse {
-    animation: scan-pulse 1.5s ease-in-out infinite;
-  }
-
-  /* Grid scan line effect */
-  @keyframes scan-line {
-    0% { transform: translateY(-100%); }
-    100% { transform: translateY(100vh); }
-  }
-
-  /* Terminal blink cursor */
   @keyframes blink {
     0%, 50% { opacity: 1; }
     51%, 100% { opacity: 0; }
   }
-
   .cursor-blink::after {
     content: '▋';
     animation: blink 1s infinite;
@@ -84,19 +175,20 @@
 }
 
 @layer utilities {
-  /* Glassmorphism for cards */
   .glass {
     background: rgba(15, 23, 42, 0.8);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
+  [data-theme="light"] .glass {
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(12px);
+  }
 
-  /* Neon border glow */
   .neon-border {
     box-shadow: 0 0 0 1px #10b981, 0 0 15px rgba(16, 185, 129, 0.2);
   }
 
-  /* Text gradient */
   .text-gradient-emerald {
     background: linear-gradient(135deg, #10b981, #34d399);
     -webkit-background-clip: text;

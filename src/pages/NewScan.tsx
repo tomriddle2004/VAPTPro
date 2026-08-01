@@ -5,13 +5,18 @@ import { simulateScan } from '@/lib/simulateScan';
 import { SCAN_PROFILES } from '@/constants/scanProfiles';
 import { ScanType, Scan, Finding } from '@/types';
 import ScanProgress from '@/components/features/ScanProgress';
-import { Shield, Terminal, AlertCircle, CheckCircle, Info, Target, Clock } from 'lucide-react';
+import { checkAndLogAlerts } from '@/lib/notifications';
+import {
+  Shield, Terminal, AlertCircle, CheckCircle, Info,
+  Target, Clock, AlertTriangle, Globe,
+} from 'lucide-react';
 
 export default function NewScan() {
   const navigate = useNavigate();
   const [ip, setIp] = useState('');
   const [scanType, setScanType] = useState<ScanType>('vulnerability');
   const [ipError, setIpError] = useState('');
+  const [ipWarning, setIpWarning] = useState('');
   const [ipValid, setIpValid] = useState<boolean | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -19,13 +24,15 @@ export default function NewScan() {
   const [cancelFn, setCancelFn] = useState<(() => void) | null>(null);
 
   const validateIP = useCallback((value: string) => {
-    if (!value) { setIpError(''); setIpValid(null); return; }
+    if (!value) { setIpError(''); setIpWarning(''); setIpValid(null); return; }
     const result = validateScanTarget(value);
     if (result.valid) {
       setIpError('');
+      setIpWarning(result.warning ?? '');
       setIpValid(true);
     } else {
       setIpError(result.error);
+      setIpWarning('');
       setIpValid(false);
     }
   }, []);
@@ -38,10 +45,7 @@ export default function NewScan() {
 
   const handleLaunch = () => {
     const result = validateScanTarget(ip);
-    if (!result.valid) {
-      setIpError(result.error);
-      return;
-    }
+    if (!result.valid) { setIpError(result.error); return; }
 
     setIsScanning(true);
     setProgress(0);
@@ -52,8 +56,10 @@ export default function NewScan() {
         setProgress(pct);
         setProgressMsg(msg);
       },
-      onComplete: (scan: Scan, _findings: Finding[]) => {
+      onComplete: (scan: Scan, findings: Finding[]) => {
         setIsScanning(false);
+        // Evaluate and log any matching alert rules
+        checkAndLogAlerts(scan, findings);
         navigate(`/scan/${scan.id}`);
       },
       onError: (err) => {
@@ -72,18 +78,26 @@ export default function NewScan() {
 
   const selectedProfile = SCAN_PROFILES.find(p => p.id === scanType)!;
 
+  // Quick-fill examples now include domains and public IP
+  const EXAMPLES = [
+    { label: '192.168.1.1', desc: 'Private IPv4' },
+    { label: '10.0.0.50', desc: 'Private IPv4' },
+    { label: '192.168.1.0/24', desc: 'CIDR subnet' },
+    { label: 'server.corp.local', desc: 'Internal FQDN' },
+    { label: '8.8.8.8', desc: 'Public IP (auth required)' },
+  ];
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* Page header */}
       <div>
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+        <h1 className="text-2xl font-bold flex items-center gap-3" style={{ color: 'var(--text-primary)' }}>
           <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
             <Terminal className="w-4 h-4 text-emerald-400" />
           </div>
           Launch New Vulnerability Scan
         </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Configure and execute an Nmap assessment against an authorized target host.
+        <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+          Supports private IPs, public IPs, CIDR subnets, and domain names.
         </p>
       </div>
 
@@ -97,7 +111,7 @@ export default function NewScan() {
         />
       ) : (
         <div className="space-y-5">
-          {/* Target IP */}
+          {/* Target input */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
             <div className="flex items-center gap-2 mb-1">
               <Target className="w-4 h-4 text-slate-400" />
@@ -105,25 +119,34 @@ export default function NewScan() {
             </div>
 
             <div>
-              <label className="block text-slate-300 text-sm font-medium mb-2">
-                Target IP Address <span className="text-red-400">*</span>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>
+                Target <span className="text-red-400">*</span>
+                <span className="ml-2 text-xs font-normal" style={{ color: 'var(--text-muted)' }}>
+                  (IPv4 · CIDR · Domain · Public IP)
+                </span>
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={ip}
                   onChange={handleIPChange}
-                  placeholder="e.g., 192.168.1.100"
-                  className={`w-full bg-black/40 border rounded-lg px-4 py-3 font-mono text-white placeholder-slate-600 focus:outline-none focus:ring-2 transition-all ${
-                    ipValid === true
+                  placeholder="e.g., 192.168.1.100 or server.corp.local or 192.168.1.0/24"
+                  className={`w-full bg-black/40 border rounded-lg px-4 py-3 font-mono placeholder-slate-600 focus:outline-none focus:ring-2 transition-all ${
+                    ipValid === true && !ipWarning
                       ? 'border-emerald-500/50 focus:ring-emerald-500/30'
+                      : ipValid === true && ipWarning
+                      ? 'border-yellow-500/50 focus:ring-yellow-500/30'
                       : ipValid === false
                       ? 'border-red-500/50 focus:ring-red-500/30'
                       : 'border-slate-700 focus:ring-emerald-500/30 focus:border-emerald-500/50'
                   }`}
+                  style={{ color: 'var(--text-primary)' }}
                 />
-                {ipValid === true && (
+                {ipValid === true && !ipWarning && (
                   <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-emerald-400" />
+                )}
+                {ipValid === true && ipWarning && (
+                  <AlertTriangle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-yellow-400" />
                 )}
                 {ipValid === false && (
                   <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-red-400" />
@@ -137,26 +160,47 @@ export default function NewScan() {
                 </div>
               )}
 
-              {ipValid === true && (
+              {ipValid === true && ipWarning && (
+                <div className="mt-2 flex items-start gap-2 text-yellow-400 text-sm bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{ipWarning}</span>
+                </div>
+              )}
+
+              {ipValid === true && !ipWarning && (
                 <div className="mt-2 flex items-center gap-2 text-emerald-400 text-sm">
                   <CheckCircle className="w-4 h-4" />
-                  <span>Target is within authorized RFC 1918 scope.</span>
+                  <span>Target is within authorized RFC 1918 private scope.</span>
                 </div>
               )}
             </div>
 
-            {/* Quick fill examples */}
-            <div className="flex flex-wrap gap-2">
-              <span className="text-slate-600 text-xs self-center">Quick fill:</span>
-              {['192.168.1.1', '10.0.0.50', '172.16.0.10', '192.168.100.254'].map(example => (
-                <button
-                  key={example}
-                  onClick={() => { setIp(example); validateIP(example); }}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white text-xs font-mono rounded transition-colors"
-                >
-                  {example}
-                </button>
-              ))}
+            {/* Quick fill */}
+            <div className="space-y-2">
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Quick fill:</span>
+              <div className="flex flex-wrap gap-2">
+                {EXAMPLES.map(ex => (
+                  <button
+                    key={ex.label}
+                    onClick={() => { setIp(ex.label); validateIP(ex.label); }}
+                    className="group px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded transition-colors"
+                    style={{ color: 'var(--text-secondary)' }}
+                    title={ex.desc}
+                  >
+                    <span className="text-xs font-mono">{ex.label}</span>
+                    {ex.desc.includes('Public') && (
+                      <Globe className="inline w-3 h-3 ml-1 text-yellow-500 opacity-70" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Extended target info */}
+            <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300/80 leading-relaxed">
+              <span className="font-semibold">Extended target support:</span> Private IPs are fully authorized.
+              Public IPs and domains require written authorization — they are accepted but the backend enforces additional validation
+              before spawning <code className="font-mono bg-black/30 px-1 rounded">/usr/bin/nmap</code>.
             </div>
           </div>
 
@@ -188,15 +232,16 @@ export default function NewScan() {
                   <div className="text-2xl flex-shrink-0 mt-0.5">{profile.icon}</div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 flex-wrap">
-                      <span className={`font-semibold ${scanType === profile.id ? 'text-emerald-300' : 'text-white'}`}>
+                      <span className={`font-semibold ${scanType === profile.id ? 'text-emerald-300' : ''}`}
+                        style={scanType === profile.id ? {} : { color: 'var(--text-primary)' }}>
                         {profile.label}
                       </span>
-                      <div className="flex items-center gap-1 text-slate-500 text-xs">
+                      <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                         <Clock className="w-3 h-3" />
                         {profile.estimated_time}
                       </div>
                     </div>
-                    <p className="text-slate-400 text-sm mt-0.5">{profile.description}</p>
+                    <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>{profile.description}</p>
                     <div className="mt-2 font-mono text-xs text-slate-600 bg-black/30 px-2 py-1 rounded inline-block">
                       nmap {profile.args.join(' ')} {'<target>'}
                     </div>
@@ -211,16 +256,16 @@ export default function NewScan() {
             </div>
           </div>
 
-          {/* Info box */}
+          {/* Security notice */}
           <div className="flex gap-3 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
             <Info className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
             <div className="text-blue-300/80 text-sm space-y-1">
               <p className="font-medium text-blue-300">Security Notice</p>
-              <p>Only scan systems you are authorized to test. Unauthorized scanning may violate laws including the Computer Fraud and Abuse Act (CFAA). Ensure you have written permission before proceeding.</p>
+              <p>Only scan systems you are authorized to test. Unauthorized scanning may violate the Computer Fraud and Abuse Act (CFAA) and equivalent legislation. Ensure you have written permission before proceeding.</p>
             </div>
           </div>
 
-          {/* Launch button */}
+          {/* Launch */}
           <button
             onClick={handleLaunch}
             disabled={!ip || ipValid !== true}
@@ -228,6 +273,7 @@ export default function NewScan() {
           >
             <Terminal className="w-5 h-5" />
             Launch {selectedProfile.label}
+            {ipValid && ipWarning && <AlertTriangle className="w-4 h-4 text-yellow-800" />}
           </button>
         </div>
       )}

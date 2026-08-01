@@ -7,32 +7,41 @@ import ScanHistory from '@/pages/ScanHistory';
 import Compliance from '@/pages/Compliance';
 import Scheduler from '@/pages/Scheduler';
 import NetworkTopology from '@/pages/NetworkTopology';
+import Notifications from '@/pages/Notifications';
+import Allowlist from '@/pages/Allowlist';
+import Compare from '@/pages/Compare';
 import NotFound from '@/pages/NotFound';
 
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-[#060d1a] text-white">
+      <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-base)', color: 'var(--text-primary)' }}>
         <Header />
         <main className="max-w-[1400px] mx-auto px-6 py-8">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/scan/new" element={<NewScan />} />
-            <Route path="/scan/:id" element={<ScanDetail />} />
-            <Route path="/history" element={<ScanHistory />} />
-            <Route path="/compliance" element={<Compliance />} />
-            <Route path="/scheduler" element={<Scheduler />} />
-            <Route path="/topology" element={<NetworkTopology />} />
-            <Route path="*" element={<NotFound />} />
+            <Route path="/"               element={<Dashboard />} />
+            <Route path="/scan/new"       element={<NewScan />} />
+            <Route path="/scan/:id"       element={<ScanDetail />} />
+            <Route path="/history"        element={<ScanHistory />} />
+            <Route path="/compliance"     element={<Compliance />} />
+            <Route path="/scheduler"      element={<Scheduler />} />
+            <Route path="/topology"       element={<NetworkTopology />} />
+            <Route path="/notifications"  element={<Notifications />} />
+            <Route path="/allowlist"      element={<Allowlist />} />
+            <Route path="/compare"        element={<Compare />} />
+            <Route path="*"              element={<NotFound />} />
           </Routes>
         </main>
-        <footer className="border-t border-slate-900 mt-16 py-6 px-6">
+        <footer className="border-t mt-16 py-6 px-6" style={{ borderColor: 'var(--border-subtle)' }}>
           <div className="max-w-[1400px] mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
-            <div className="text-slate-600 text-sm font-mono">
-              VAPT Pro v2.4.1 — Vulnerability Assessment & Reporting Platform
+            <div className="text-sm font-mono" style={{ color: 'var(--text-muted)' }}>
+              VAPT Pro v2.5.0 — Vulnerability Assessment &amp; Reporting Platform
             </div>
-            <div className="flex items-center gap-4 text-slate-700 text-xs font-mono">
-              <span>Nmap 7.94</span><span>•</span><span>Node.js 18+</span><span>•</span><span>SQLite 3</span><span>•</span><span>Linux Native</span>
+            <div className="flex items-center gap-4 text-xs font-mono" style={{ color: 'var(--text-faint)' }}>
+              <span>Nmap 7.94</span><span>•</span>
+              <span>Node.js 18+</span><span>•</span>
+              <span>SQLite 3</span><span>•</span>
+              <span>Linux Native</span>
             </div>
           </div>
         </footer>

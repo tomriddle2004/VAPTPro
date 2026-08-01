@@ -1,83 +1,136 @@
 /**
- * Client-side IP validation mirroring server-side Node.js net.isIP() + RFC 1918 enforcement.
- * On the actual Linux backend, this is enforced via net.isIP() before spawning nmap.
+ * Client-side target validation — extended to support:
+ *  • IPv4 private (RFC 1918) — full authorization
+ *  • IPv4 public — allowed with security warning
+ *  • CIDR subnets (e.g., 192.168.1.0/24)
+ *  • Domain names / FQDNs (e.g., server.corp.local, example.com)
+ *
+ * On the Linux backend, net.isIP() + scope enforcement runs again before
+ * spawning /usr/bin/nmap. Frontend validation is UX-only.
  */
 
+export type TargetCategory = 'ipv4_private' | 'ipv4_public' | 'cidr' | 'domain';
+
 export type IPValidationResult =
-  | { valid: true; type: 'ipv4' | 'ipv6'; isPrivate: boolean; range?: string }
+  | {
+      valid: true;
+      category: TargetCategory;
+      isPrivate: boolean;
+      range?: string;
+      /** Set for public IPs and domains — user must acknowledge risk */
+      warning?: string;
+    }
   | { valid: false; error: string };
 
-const RFC1918_PATTERNS = [
-  { regex: /^10\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/, range: '10.0.0.0/8' },
-  {
-    regex: /^172\.(1[6-9]|2\d|3[01])\.(\d{1,3})\.(\d{1,3})$/,
-    range: '172.16.0.0/12',
-  },
-  { regex: /^192\.168\.(\d{1,3})\.(\d{1,3})$/, range: '192.168.0.0/16' },
-  { regex: /^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/, range: '127.0.0.0/8 (loopback)' },
+// ─── RFC 1918 ranges ────────────────────────────────────────────────────────
+
+const RFC1918 = [
+  { regex: /^10\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/,               range: '10.0.0.0/8' },
+  { regex: /^172\.(1[6-9]|2\d|3[01])\.(\d{1,3})\.(\d{1,3})$/,    range: '172.16.0.0/12' },
+  { regex: /^192\.168\.(\d{1,3})\.(\d{1,3})$/,                     range: '192.168.0.0/16' },
+  { regex: /^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/,              range: '127.0.0.0/8 (loopback)' },
 ];
 
 export function validateIPv4(ip: string): boolean {
   const parts = ip.split('.');
   if (parts.length !== 4) return false;
-  return parts.every(part => {
-    const n = parseInt(part, 10);
-    return !isNaN(n) && n >= 0 && n <= 255 && String(n) === part;
+  return parts.every(p => {
+    const n = parseInt(p, 10);
+    return !isNaN(n) && n >= 0 && n <= 255 && String(n) === p;
   });
 }
 
 export function isRFC1918(ip: string): { result: boolean; range?: string } {
-  for (const pattern of RFC1918_PATTERNS) {
-    if (pattern.regex.test(ip)) {
-      return { result: true, range: pattern.range };
-    }
+  for (const p of RFC1918) {
+    if (p.regex.test(ip)) return { result: true, range: p.range };
   }
   return { result: false };
 }
+
+// ─── Domain regex (covers FQDNs and simple hostnames) ───────────────────────
+
+const DOMAIN_REGEX =
+  /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,63}$|^[a-zA-Z][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]$/;
+
+// ─── CIDR regex ──────────────────────────────────────────────────────────────
+
+const CIDR_REGEX = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\/(\d{1,2})$/;
+
+// ─── Main validation ─────────────────────────────────────────────────────────
 
 export function validateScanTarget(input: string): IPValidationResult {
   const trimmed = input.trim();
 
   if (!trimmed) {
-    return { valid: false, error: 'Target IP address is required.' };
+    return { valid: false, error: 'Target is required.' };
   }
 
-  // Basic IPv4 format check
-  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(trimmed)) {
+  // 1. CIDR notation (192.168.1.0/24)
+  const cidrMatch = CIDR_REGEX.exec(trimmed);
+  if (cidrMatch) {
+    const [, baseIP, prefix] = cidrMatch;
+    if (!validateIPv4(baseIP)) {
+      return { valid: false, error: 'Invalid base IP address in CIDR notation.' };
+    }
+    const pfx = parseInt(prefix, 10);
+    if (pfx < 0 || pfx > 32) {
+      return { valid: false, error: 'CIDR prefix must be between 0 and 32.' };
+    }
+    const { result, range } = isRFC1918(baseIP);
+    if (!result) {
+      return {
+        valid: true,
+        category: 'cidr',
+        isPrivate: false,
+        warning: 'This CIDR includes public address space. Ensure you have explicit authorization before scanning.',
+      };
+    }
+    return { valid: true, category: 'cidr', isPrivate: true, range };
+  }
+
+  // 2. IPv4
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(trimmed)) {
+    if (!validateIPv4(trimmed)) {
+      return { valid: false, error: 'Invalid IPv4 address — each octet must be 0–255.' };
+    }
+    const { result, range } = isRFC1918(trimmed);
+    if (result) {
+      return { valid: true, category: 'ipv4_private', isPrivate: true, range };
+    }
+    // Public IP — allowed with warning
     return {
-      valid: false,
-      error: 'Invalid format. Enter a valid IPv4 address (e.g., 192.168.1.100).',
+      valid: true,
+      category: 'ipv4_public',
+      isPrivate: false,
+      warning:
+        'Public IP detected. Scanning systems you do not own or have explicit written authorization to test may violate laws (CFAA, ECPA). Proceed only with authorization.',
     };
   }
 
-  if (!validateIPv4(trimmed)) {
+  // 3. Domain name / FQDN
+  if (DOMAIN_REGEX.test(trimmed) && !trimmed.includes(' ')) {
     return {
-      valid: false,
-      error: 'Invalid IPv4 address. Each octet must be 0–255.',
+      valid: true,
+      category: 'domain',
+      isPrivate: false,
+      warning:
+        'Domain/FQDN target. Ensure the hostname resolves to an authorized IP. Backend will resolve via DNS before scanning.',
     };
   }
 
-  const { result, range } = isRFC1918(trimmed);
-  if (!result) {
-    return {
-      valid: false,
-      error:
-        'BLOCKED: Public or non-RFC 1918 IP address. Only private subnets (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) or explicitly whitelisted targets are permitted.',
-    };
-  }
-
-  return { valid: true, type: 'ipv4', isPrivate: true, range };
+  return {
+    valid: false,
+    error: 'Invalid target. Accepted: IPv4 address (192.168.1.100), CIDR subnet (192.168.1.0/24), or domain name (server.corp.local).',
+  };
 }
 
+// ─── Formatting helpers ──────────────────────────────────────────────────────
+
 export function formatDuration(startISO: string, endISO?: string): string {
-  const start = new Date(startISO).getTime();
-  const end = endISO ? new Date(endISO).getTime() : Date.now();
-  const diffMs = end - start;
-  const seconds = Math.floor(diffMs / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${minutes}m ${secs}s`;
+  const diffMs = (endISO ? new Date(endISO).getTime() : Date.now()) - new Date(startISO).getTime();
+  const s = Math.floor(diffMs / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
 export function formatDateTime(isoStr: string): string {

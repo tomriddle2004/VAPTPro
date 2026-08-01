@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAllScans } from '@/lib/storage';
 import { Scan } from '@/types';
-import { Network, ZoomIn, ZoomOut, RotateCcw, Info } from 'lucide-react';
+import { Network, ZoomIn, ZoomOut, RotateCcw, Info, Download, ImageIcon } from 'lucide-react';
 
 interface PhysicsNode {
   id: string;
@@ -35,7 +35,6 @@ function stepPhysics(nodes: PhysicsNode[], edges: Edge[]): PhysicsNode[] {
   const next = nodes.map(n => ({ ...n }));
   const cx = W / 2, cy = H / 2;
   const REPULSE = 14000, ATTRACT = 0.004, IDEAL = 180, GRAV = 0.0008, DAMP = 0.82;
-
   for (let i = 0; i < next.length; i++) {
     for (let j = i + 1; j < next.length; j++) {
       const dx = next[i].x - next[j].x, dy = next[i].y - next[j].y;
@@ -45,7 +44,6 @@ function stepPhysics(nodes: PhysicsNode[], edges: Edge[]): PhysicsNode[] {
       next[j].vx -= f * dx / d; next[j].vy -= f * dy / d;
     }
   }
-
   for (const [s, t] of edges) {
     const si = next.find(n => n.id === s), ti = next.find(n => n.id === t);
     if (!si || !ti) continue;
@@ -55,7 +53,6 @@ function stepPhysics(nodes: PhysicsNode[], edges: Edge[]): PhysicsNode[] {
     si.vx += f * dx / d; si.vy += f * dy / d;
     ti.vx -= f * dx / d; ti.vy -= f * dy / d;
   }
-
   for (const n of next) {
     n.vx += (cx - n.x) * GRAV; n.vy += (cy - n.y) * GRAV;
     n.vx *= DAMP; n.vy *= DAMP;
@@ -72,9 +69,11 @@ export default function NetworkTopology() {
   const [selected, setSelected] = useState<PhysicsNode | null>(null);
   const [zoom, setZoom] = useState(1);
   const [settled, setSettled] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const physRef = useRef<PhysicsNode[]>([]);
   const edgesRef = useRef<Edge[]>([]);
   const animRef = useRef<number>();
+  const svgRef = useRef<SVGSVGElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -87,7 +86,6 @@ export default function NetworkTopology() {
     const count = ipMap.size || 1;
     const step = (2 * Math.PI) / count;
     const r = Math.min(200, Math.max(100, count * 45));
-
     const newNodes: PhysicsNode[] = Array.from(ipMap.entries()).map(([ip, scan], i) => ({
       id: scan.id, ip, scan,
       x: W / 2 + r * Math.cos(i * step - Math.PI / 2),
@@ -98,15 +96,11 @@ export default function NetworkTopology() {
       radius: 28 + Math.min(12, (scan.findings_count ?? 0) * 2),
       subnet: ip.split('.').slice(0, 3).join('.'),
     }));
-
     const newEdges: Edge[] = [];
-    for (let i = 0; i < newNodes.length; i++) {
-      for (let j = i + 1; j < newNodes.length; j++) {
-        if (newNodes[i].subnet === newNodes[j].subnet) {
+    for (let i = 0; i < newNodes.length; i++)
+      for (let j = i + 1; j < newNodes.length; j++)
+        if (newNodes[i].subnet === newNodes[j].subnet)
           newEdges.push([newNodes[i].id, newNodes[j].id]);
-        }
-      }
-    }
 
     physRef.current = newNodes;
     edgesRef.current = newEdges;
@@ -148,6 +142,59 @@ export default function NetworkTopology() {
     animRef.current = requestAnimationFrame(animate);
   }, []);
 
+  // ── PNG Export ────────────────────────────────────────────────────────────
+  const handleExportPNG = useCallback(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl || nodes.length === 0) return;
+    setExporting(true);
+
+    const clone = svgEl.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', String(W));
+    clone.setAttribute('height', String(H));
+
+    // Remove any existing bg rect then prepend a solid dark one
+    const existingBg = clone.querySelector('rect[fill="url(#grid)"]');
+    if (existingBg) existingBg.setAttribute('fill', '#060d1a');
+
+    const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bgRect.setAttribute('x', '0');
+    bgRect.setAttribute('y', '0');
+    bgRect.setAttribute('width', String(W));
+    bgRect.setAttribute('height', String(H));
+    bgRect.setAttribute('fill', '#060d1a');
+    clone.insertBefore(bgRect, clone.firstChild);
+
+    // Strip CSS filters that may not render in canvas
+    clone.querySelectorAll('[filter]').forEach(el => el.removeAttribute('filter'));
+
+    const svgData = new XMLSerializer().serializeToString(clone);
+    const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    const img = new Image();
+    img.onload = () => {
+      const SCALE = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = W * SCALE;
+      canvas.height = H * SCALE;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = '#060d1a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(SCALE, SCALE);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+
+      const a = document.createElement('a');
+      a.download = `vapt-topology-${new Date().toISOString().slice(0, 10)}.png`;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+      setExporting(false);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); setExporting(false); };
+    img.src = url;
+  }, [nodes]);
+
   const nodeById = (id: string) => nodes.find(n => n.id === id);
 
   return (
@@ -155,13 +202,15 @@ export default function NetworkTopology() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <h1 className="text-2xl font-bold flex items-center gap-3" style={{ color: 'var(--text-primary)' }}>
             <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center">
               <Network className="w-4 h-4 text-purple-400" />
             </div>
             Network Topology Map
           </h1>
-          <p className="text-slate-400 text-sm mt-1">Force-directed graph of all scanned hosts • {nodes.length} node{nodes.length !== 1 ? 's' : ''} • {edges.length} subnet link{edges.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+            Force-directed graph • {nodes.length} node{nodes.length !== 1 ? 's' : ''} • {edges.length} subnet link{edges.length !== 1 ? 's' : ''}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setZoom(z => Math.min(2, z + 0.2))}
@@ -176,6 +225,16 @@ export default function NetworkTopology() {
             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white transition-colors text-sm">
             <RotateCcw className="w-4 h-4" />Reset
           </button>
+          <button
+            onClick={handleExportPNG}
+            disabled={exporting || nodes.length === 0}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-400 transition-colors text-sm disabled:opacity-50"
+          >
+            {exporting
+              ? <><div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />Exporting…</>
+              : <><ImageIcon className="w-4 h-4" />Download PNG</>
+            }
+          </button>
           {!settled && (
             <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />Simulating…
@@ -189,16 +248,16 @@ export default function NetworkTopology() {
         {Object.entries(RISK_STYLE).map(([risk, s]) => (
           <div key={risk} className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full" style={{ background: s.stroke }} />
-            <span className="text-slate-400 text-xs">{risk}</span>
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{risk}</span>
           </div>
         ))}
-        <div className="ml-auto flex items-center gap-1.5 text-xs text-slate-600">
+        <div className="ml-auto flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
           <Info className="w-3 h-3" />Dashed lines = same /24 subnet
         </div>
       </div>
 
-      {/* SVG Canvas */}
-      <div className="bg-[#060d1a] border border-slate-800 rounded-xl overflow-hidden" style={{ height: `${H + 2}px` }}>
+      {/* SVG Canvas — intentionally kept dark for readability */}
+      <div className="border border-slate-800 rounded-xl overflow-hidden" style={{ background: '#060d1a', height: `${H + 2}px` }}>
         {nodes.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <Network className="w-12 h-12 text-slate-700" />
@@ -207,11 +266,11 @@ export default function NetworkTopology() {
           </div>
         ) : (
           <svg
+            ref={svgRef}
             width="100%" height={H}
             viewBox={`${W / 2 - (W / 2) / zoom} ${H / 2 - (H / 2) / zoom} ${W / zoom} ${H / zoom}`}
             style={{ cursor: 'crosshair' }}
           >
-            {/* Grid pattern */}
             <defs>
               <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
                 <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0f172a" strokeWidth="0.5" />
@@ -223,66 +282,42 @@ export default function NetworkTopology() {
             </defs>
             <rect width={W} height={H} fill="url(#grid)" />
 
-            {/* Edges */}
             {edges.map(([s, t]) => {
               const sn = nodeById(s), tn = nodeById(t);
               if (!sn || !tn) return null;
-              return (
-                <line key={`${s}-${t}`} x1={sn.x} y1={sn.y} x2={tn.x} y2={tn.y}
-                  stroke="#334155" strokeWidth="1.5" strokeDasharray="6 4" opacity="0.6" />
-              );
+              return <line key={`${s}-${t}`} x1={sn.x} y1={sn.y} x2={tn.x} y2={tn.y}
+                stroke="#334155" strokeWidth="1.5" strokeDasharray="6 4" opacity="0.6" />;
             })}
 
-            {/* Subnet label areas */}
-            {edges.length > 0 && (() => {
+            {/* Subnet labels */}
+            {(() => {
               const subnets = new Map<string, PhysicsNode[]>();
-              for (const n of nodes) {
-                const list = subnets.get(n.subnet) ?? [];
-                list.push(n); subnets.set(n.subnet, list);
-              }
+              for (const n of nodes) { const l = subnets.get(n.subnet) ?? []; l.push(n); subnets.set(n.subnet, l); }
               return Array.from(subnets.entries()).filter(([, ns]) => ns.length > 1).map(([subnet, ns]) => {
                 const cx = ns.reduce((s, n) => s + n.x, 0) / ns.length;
                 const cy = ns.reduce((s, n) => s + n.y, 0) / ns.length;
-                return (
-                  <text key={subnet} x={cx} y={cy - 55} textAnchor="middle"
-                    fill="#1e3a5f" fontSize="11" fontFamily="monospace" fontWeight="bold">
-                    {subnet}.0/24
-                  </text>
-                );
+                return <text key={subnet} x={cx} y={cy - 55} textAnchor="middle"
+                  fill="#1e3a5f" fontSize="11" fontFamily="monospace" fontWeight="bold">{subnet}.0/24</text>;
               });
             })()}
 
-            {/* Nodes */}
             {nodes.map(node => {
               const style = RISK_STYLE[node.risk] ?? RISK_STYLE.Unknown;
-              const isHov = hovered?.id === node.id;
-              const isSel = selected?.id === node.id;
+              const isHov = hovered?.id === node.id, isSel = selected?.id === node.id;
               return (
                 <g key={node.id}
-                  onMouseEnter={() => setHovered(node)}
-                  onMouseLeave={() => setHovered(null)}
+                  onMouseEnter={() => setHovered(node)} onMouseLeave={() => setHovered(null)}
                   onClick={() => setSelected(selected?.id === node.id ? null : node)}
                   onDoubleClick={() => navigate(`/scan/${node.id}`)}
                   style={{ cursor: 'pointer' }}>
-                  {/* Outer pulse ring for active/hovered */}
-                  {(isHov || isSel) && (
-                    <circle cx={node.x} cy={node.y} r={node.radius + 10}
-                      fill="none" stroke={style.stroke} strokeWidth="1.5" opacity="0.4"
-                      style={isHov ? { animation: 'none' } : {}} />
-                  )}
-                  {/* Risk glow */}
-                  <circle cx={node.x} cy={node.y} r={node.radius + 4}
-                    fill={style.fill} opacity="0.3" />
-                  {/* Main node */}
-                  <circle cx={node.x} cy={node.y} r={node.radius}
-                    fill={style.fill} stroke={style.stroke}
+                  {(isHov || isSel) && <circle cx={node.x} cy={node.y} r={node.radius + 10}
+                    fill="none" stroke={style.stroke} strokeWidth="1.5" opacity="0.4" />}
+                  <circle cx={node.x} cy={node.y} r={node.radius + 4} fill={style.fill} opacity="0.3" />
+                  <circle cx={node.x} cy={node.y} r={node.radius} fill={style.fill} stroke={style.stroke}
                     strokeWidth={isSel ? 3 : isHov ? 2.5 : 1.5}
                     filter={isHov || isSel ? 'url(#glow)' : undefined} />
-                  {/* IP label */}
-                  <text x={node.x} y={node.y + 4} textAnchor="middle"
-                    fill={style.text} fontSize={Math.max(9, 12 - node.ip.length * 0.3)}
-                    fontFamily="monospace" fontWeight="600">{node.ip}</text>
-                  {/* Findings count badge */}
+                  <text x={node.x} y={node.y + 4} textAnchor="middle" fill={style.text}
+                    fontSize={Math.max(9, 12 - node.ip.length * 0.3)} fontFamily="monospace" fontWeight="600">{node.ip}</text>
                   {node.findings_count > 0 && (
                     <g>
                       <circle cx={node.x + node.radius - 4} cy={node.y - node.radius + 4} r={9}
@@ -294,7 +329,6 @@ export default function NetworkTopology() {
                       </text>
                     </g>
                   )}
-                  {/* Risk label below node */}
                   <text x={node.x} y={node.y + node.radius + 14} textAnchor="middle"
                     fill={style.stroke} fontSize="9" fontFamily="monospace" opacity="0.8">
                     {node.risk?.toUpperCase()}
@@ -303,7 +337,6 @@ export default function NetworkTopology() {
               );
             })}
 
-            {/* Hover tooltip */}
             {hovered && (() => {
               const style = RISK_STYLE[hovered.risk] ?? RISK_STYLE.Unknown;
               const tx = Math.min(hovered.x + hovered.radius + 12, W - 170);
@@ -314,13 +347,12 @@ export default function NetworkTopology() {
                     fill="#0b1426" stroke={style.stroke} strokeWidth="1.5" opacity="0.97" />
                   <text x={tx + 10} y={ty + 18} fill={style.text} fontSize="12" fontWeight="bold" fontFamily="monospace">{hovered.ip}</text>
                   <text x={tx + 10} y={ty + 34} fill="#64748b" fontSize="9" fontFamily="monospace">Risk: {hovered.risk}</text>
-                  <text x={tx + 10} y={ty + 48} fill="#64748b" fontSize="9" fontFamily="monospace">
-                    Findings: {hovered.findings_count}</text>
+                  <text x={tx + 10} y={ty + 48} fill="#64748b" fontSize="9" fontFamily="monospace">Findings: {hovered.findings_count}</text>
                   <text x={tx + 10} y={ty + 62} fill="#475569" fontSize="9" fontFamily="monospace">
                     {hovered.scan.scan_type} • {new Date(hovered.scan.start_time).toLocaleDateString()}
                   </text>
                   <text x={tx + 10} y={ty + 74} fill={style.stroke} fontSize="8" fontFamily="monospace" opacity="0.7">
-                    Double-click to view details
+                    Double-click → view report
                   </text>
                 </g>
               );
@@ -335,11 +367,11 @@ export default function NetworkTopology() {
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-3 h-3 rounded-full" style={{ background: (RISK_STYLE[selected.risk] ?? RISK_STYLE.Unknown).stroke }} />
-              <span className="text-white font-mono font-bold text-lg">{selected.ip}</span>
+              <span className="font-mono font-bold text-lg" style={{ color: 'var(--text-primary)' }}>{selected.ip}</span>
               <span className={`text-xs px-2 py-0.5 rounded border font-bold font-mono ${
                 selected.risk === 'Critical' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
-                selected.risk === 'High' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
-                selected.risk === 'Clean' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                selected.risk === 'High'     ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
+                selected.risk === 'Clean'    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
                 'bg-slate-700 text-slate-300 border-slate-600'
               }`}>{selected.risk}</span>
             </div>
@@ -351,8 +383,8 @@ export default function NetworkTopology() {
                 { label: 'Scan Date', value: new Date(selected.scan.start_time).toLocaleDateString() },
               ].map(r => (
                 <div key={r.label} className="bg-black/20 border border-slate-800 rounded-lg p-3">
-                  <div className="text-slate-500 text-[10px] font-mono">{r.label}</div>
-                  <div className="text-white text-sm font-medium mt-0.5">{r.value}</div>
+                  <div className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{r.label}</div>
+                  <div className="text-sm font-medium mt-0.5" style={{ color: 'var(--text-primary)' }}>{r.value}</div>
                 </div>
               ))}
             </div>
