@@ -97,6 +97,33 @@ export function getAllScanDetails(): ScanDetail[] {
     }));
 }
 
+export function addScanTag(scanId: string, tag: string): void {
+  const scans = loadScans();
+  const idx = scans.findIndex(s => s.id === scanId);
+  if (idx !== -1) {
+    const existing = scans[idx].tags || [];
+    if (!existing.includes(tag)) {
+      scans[idx] = { ...scans[idx], tags: [...existing, tag] };
+      saveScans(scans);
+    }
+  }
+}
+
+export function removeScanTag(scanId: string, tag: string): void {
+  const scans = loadScans();
+  const idx = scans.findIndex(s => s.id === scanId);
+  if (idx !== -1) {
+    scans[idx] = { ...scans[idx], tags: (scans[idx].tags || []).filter(t => t !== tag) };
+    saveScans(scans);
+  }
+}
+
+export function getAllTags(): string[] {
+  const set = new Set<string>();
+  loadScans().forEach(s => (s.tags || []).forEach(t => set.add(t)));
+  return Array.from(set).sort();
+}
+
 // Initialize storage with mock data on first load
 if (!localStorage.getItem(SCANS_KEY)) {
   saveScans(MOCK_SCANS);

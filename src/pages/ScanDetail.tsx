@@ -1,7 +1,6 @@
-
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { getScanById } from '@/lib/storage';
+import { useEffect, useState, useRef } from 'react';
+import { getScanById, addScanTag, removeScanTag } from '@/lib/storage';
 import { ScanDetail as ScanDetailType } from '@/types';
 import { formatDateTime, formatDuration } from '@/lib/ipValidator';
 import StatusBadge from '@/components/features/StatusBadge';
@@ -9,9 +8,11 @@ import RiskBadge from '@/components/features/RiskBadge';
 import SeverityBadge from '@/components/features/SeverityBadge';
 import VulnerabilityMatrix from '@/components/features/VulnerabilityMatrix';
 import { generatePDFReport } from '@/lib/pdfReport';
+import TagChip, { PRESET_TAGS } from '@/components/features/TagChip';
 import {
   ArrowLeft, Download, RefreshCw, Shield, Server,
-  AlertTriangle, CheckCircle2, Info, Terminal, Cpu, ScrollText
+  AlertTriangle, CheckCircle2, Info, Terminal, Cpu, ScrollText,
+  Tag, Plus, X,
 } from 'lucide-react';
 import CVEModal from '@/components/features/CVEModal';
 import LiveLogPanel from '@/components/features/LiveLogPanel';
@@ -24,22 +25,33 @@ export default function ScanDetail() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [activeTab, setActiveTab] = useState<'findings' | 'info' | 'raw' | 'logs'>('findings');
   const [selectedCVE, setSelectedCVE] = useState<string | null>(null);
+  const [tags, setTags] = useState<string[]>([]);
+  const [showTagInput, setShowTagInput] = useState(false);
+  const [customTag, setCustomTag] = useState('');
+  const tagInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (id) {
       const detail = getScanById(id);
       if (!detail) navigate('/history');
-      else setScan(detail);
+      else {
+        setScan(detail);
+        setTags(detail.tags || []);
+      }
     }
   }, [id]);
+
+  useEffect(() => {
+    if (showTagInput) tagInputRef.current?.focus();
+  }, [showTagInput]);
 
   if (!scan) return null;
 
   const profile = SCAN_PROFILES.find(p => p.id === scan.scan_type);
   const criticals = scan.findings.filter(f => f.severity === 'critical');
-  const highs = scan.findings.filter(f => f.severity === 'high');
-  const mediums = scan.findings.filter(f => f.severity === 'medium');
-  const lows = scan.findings.filter(f => f.severity === 'low');
+  const highs     = scan.findings.filter(f => f.severity === 'high');
+  const mediums   = scan.findings.filter(f => f.severity === 'medium');
+  const lows      = scan.findings.filter(f => f.severity === 'low');
 
   const handleDownload = async () => {
     setIsDownloading(true);
@@ -49,35 +61,62 @@ export default function ScanDetail() {
 
   const maxCVSS = scan.findings.reduce((max, f) => Math.max(max, f.cvss_score ?? 0), 0);
 
+  // ── Tag helpers ────────────────────────────────────────────────────────────
+  const addTag = (tag: string) => {
+    const t = tag.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!t || tags.includes(t)) return;
+    addScanTag(scan.id, t);
+    setTags(prev => [...prev, t]);
+  };
+
+  const removeTag = (tag: string) => {
+    removeScanTag(scan.id, tag);
+    setTags(prev => prev.filter(t => t !== tag));
+  };
+
+  const handleCustomTagSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    addTag(customTag);
+    setCustomTag('');
+    setShowTagInput(false);
+  };
+
   return (
     <>
       <div className="space-y-6">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm">
-          <Link to="/" className="text-slate-500 hover:text-slate-300">Dashboard</Link>
-          <span className="text-slate-700">/</span>
-          <Link to="/history" className="text-slate-500 hover:text-slate-300">Scan History</Link>
-          <span className="text-slate-700">/</span>
-          <span className="text-slate-300 font-mono">{scan.target_ip}</span>
+          <Link to="/" className="hover:underline" style={{ color: 'var(--text-muted)' }}>Dashboard</Link>
+          <span style={{ color: 'var(--text-faint)' }}>/</span>
+          <Link to="/history" className="hover:underline" style={{ color: 'var(--text-muted)' }}>Scan History</Link>
+          <span style={{ color: 'var(--text-faint)' }}>/</span>
+          <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>{scan.target_ip}</span>
         </div>
 
-        {/* Header */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+        {/* Header card */}
+        <div
+          className="border rounded-xl p-6 space-y-4"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-subtle)' }}
+        >
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
             <div className="flex items-start gap-4">
-              <Link to="/history" className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white transition-colors flex-shrink-0 mt-1">
+              <Link
+                to="/history"
+                className="p-2 rounded-lg border transition-colors flex-shrink-0 mt-1"
+                style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-muted)', color: 'var(--text-secondary)' }}
+              >
                 <ArrowLeft className="w-4 h-4" />
               </Link>
               <div>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <h1 className="text-2xl font-bold text-white font-mono">{scan.target_ip}</h1>
+                  <h1 className="text-2xl font-bold font-mono" style={{ color: 'var(--text-primary)' }}>{scan.target_ip}</h1>
                   <StatusBadge status={scan.status} />
                   {scan.risk_rating && <RiskBadge rating={scan.risk_rating} size="md" />}
                 </div>
                 {scan.hostname && (
-                  <div className="text-slate-400 text-sm mt-0.5 font-mono">{scan.hostname}</div>
+                  <div className="text-sm mt-0.5 font-mono" style={{ color: 'var(--text-muted)' }}>{scan.hostname}</div>
                 )}
-                <div className="flex flex-wrap gap-4 mt-2 text-xs text-slate-500">
+                <div className="flex flex-wrap gap-4 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                   <span>{profile?.icon} {profile?.label}</span>
                   <span>📅 {formatDateTime(scan.start_time)}</span>
                   {scan.end_time && <span>⏱ {formatDuration(scan.start_time, scan.end_time)}</span>}
@@ -89,10 +128,10 @@ export default function ScanDetail() {
             <div className="flex items-center gap-3 flex-shrink-0">
               <Link
                 to="/scan/new"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-colors text-sm"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg border text-sm transition-colors"
+                style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-muted)', color: 'var(--text-secondary)' }}
               >
-                <RefreshCw className="w-4 h-4" />
-                Re-run
+                <RefreshCw className="w-4 h-4" />Re-run
               </Link>
               {scan.status === 'completed' && (
                 <button
@@ -106,35 +145,93 @@ export default function ScanDetail() {
               )}
             </div>
           </div>
+
+          {/* Tag manager */}
+          <div
+            className="pt-3 border-t flex flex-wrap items-center gap-2"
+            style={{ borderTopColor: 'var(--border-subtle)' }}
+          >
+            <Tag className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <span className="text-xs mr-1" style={{ color: 'var(--text-muted)' }}>Labels:</span>
+
+            {/* Existing tags */}
+            {tags.map(tag => (
+              <TagChip key={tag} tag={tag} size="md" onRemove={() => removeTag(tag)} />
+            ))}
+
+            {/* Preset tag pills (not yet applied) */}
+            {!showTagInput && PRESET_TAGS.filter(t => !tags.includes(t)).slice(0, 5).map(t => (
+              <button
+                key={t}
+                onClick={() => addTag(t)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] opacity-40 hover:opacity-80 transition-opacity"
+                style={{ borderColor: 'var(--border-muted)', color: 'var(--text-muted)' }}
+                title={`Add tag "${t}"`}
+              >
+                <Plus className="w-2 h-2" />{t}
+              </button>
+            ))}
+
+            {/* Custom tag form */}
+            {showTagInput ? (
+              <form onSubmit={handleCustomTagSubmit} className="flex items-center gap-1">
+                <input
+                  ref={tagInputRef}
+                  value={customTag}
+                  onChange={e => setCustomTag(e.target.value)}
+                  placeholder="new-tag"
+                  className="w-28 px-2 py-0.5 text-xs rounded-full border font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                  style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-muted)', color: 'var(--text-primary)' }}
+                />
+                <button type="submit" className="p-1 rounded-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors">
+                  <Plus className="w-3 h-3" />
+                </button>
+                <button type="button" onClick={() => setShowTagInput(false)} className="p-1 rounded-full text-slate-500 hover:text-white transition-colors">
+                  <X className="w-3 h-3" />
+                </button>
+              </form>
+            ) : (
+              <button
+                onClick={() => setShowTagInput(true)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] transition-colors hover:bg-white/5"
+                style={{ borderColor: 'var(--border-muted)', color: 'var(--text-muted)' }}
+              >
+                <Plus className="w-2 h-2" />Custom tag
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Summary stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Critical', count: criticals.length, color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20', icon: '🔴' },
-            { label: 'High', count: highs.length, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', icon: '🟠' },
-            { label: 'Medium', count: mediums.length, color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20', icon: '🟡' },
-            { label: 'Low', count: lows.length, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/20', icon: '🔵' },
+            { label: 'Critical', count: criticals.length, color: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/20',    icon: '🔴' },
+            { label: 'High',     count: highs.length,     color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20', icon: '🟠' },
+            { label: 'Medium',   count: mediums.length,   color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20', icon: '🟡' },
+            { label: 'Low',      count: lows.length,      color: 'text-blue-400',   bg: 'bg-blue-500/10 border-blue-500/20',   icon: '🔵' },
           ].map(s => (
             <div key={s.label} className={`border rounded-xl p-4 text-center ${s.bg}`}>
               <div className="text-2xl mb-1">{s.icon}</div>
               <div className={`text-3xl font-bold font-mono ${s.color}`}>{s.count}</div>
-              <div className="text-slate-500 text-xs mt-0.5">{s.label}</div>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</div>
             </div>
           ))}
         </div>
 
-        {/* Max CVSS indicator */}
+        {/* Max CVSS bar */}
         {maxCVSS > 0 && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center gap-4">
+          <div
+            className="border rounded-xl p-4 flex items-center gap-4"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-subtle)' }}
+          >
             <div className="flex-shrink-0">
               <div className={`text-4xl font-bold font-mono ${
                 maxCVSS >= 9 ? 'text-red-400' : maxCVSS >= 7 ? 'text-orange-400' : maxCVSS >= 4 ? 'text-yellow-400' : 'text-blue-400'
               }`}>{maxCVSS.toFixed(1)}</div>
-              <div className="text-slate-500 text-xs text-center">Max CVSS</div>
+              <div className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>Max CVSS</div>
             </div>
             <div className="flex-1">
-              <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-input)' }}>
                 <div
                   className={`h-full rounded-full transition-all ${
                     maxCVSS >= 9 ? 'bg-red-500' : maxCVSS >= 7 ? 'bg-orange-500' : maxCVSS >= 4 ? 'bg-yellow-500' : 'bg-blue-500'
@@ -142,7 +239,7 @@ export default function ScanDetail() {
                   style={{ width: `${(maxCVSS / 10) * 100}%` }}
                 />
               </div>
-              <div className="flex justify-between text-[10px] text-slate-600 mt-1">
+              <div className="flex justify-between text-[10px] mt-1 font-mono" style={{ color: 'var(--text-faint)' }}>
                 <span>0.0</span><span>Low</span><span>Medium</span><span>High</span><span>Critical 10.0</span>
               </div>
             </div>
@@ -150,22 +247,26 @@ export default function ScanDetail() {
         )}
 
         {/* Tabs */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="flex border-b border-slate-800">
+        <div
+          className="border rounded-xl overflow-hidden"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-subtle)' }}
+        >
+          <div className="flex border-b overflow-x-auto" style={{ borderBottomColor: 'var(--border-subtle)' }}>
             {[
               { key: 'findings', label: 'Vulnerability Matrix', icon: AlertTriangle, count: scan.findings.length },
-              { key: 'info', label: 'Host Information', icon: Server, count: null },
-              { key: 'raw', label: 'Nmap Command', icon: Terminal, count: null },
-              { key: 'logs', label: 'Scan Logs', icon: ScrollText, count: null },
+              { key: 'info',     label: 'Host Information',     icon: Server,        count: null },
+              { key: 'raw',      label: 'Nmap Command',         icon: Terminal,      count: null },
+              { key: 'logs',     label: 'Scan Logs',            icon: ScrollText,    count: null },
             ].map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key as typeof activeTab)}
-                className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center gap-2 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   activeTab === tab.key
                     ? 'border-emerald-400 text-emerald-400 bg-emerald-500/5'
-                    : 'border-transparent text-slate-400 hover:text-white hover:bg-white/5'
+                    : 'border-transparent hover:bg-white/5'
                 }`}
+                style={activeTab === tab.key ? {} : { color: 'var(--text-muted)' }}
               >
                 <tab.icon className="w-4 h-4" />
                 <span className="hidden sm:inline">{tab.label}</span>
@@ -186,24 +287,28 @@ export default function ScanDetail() {
             {activeTab === 'info' && (
               <div className="grid md:grid-cols-2 gap-4">
                 {[
-                  { icon: Server, label: 'Target IP', value: scan.target_ip },
-                  { icon: Cpu, label: 'Hostname', value: scan.hostname || 'Not resolved' },
-                  { icon: Shield, label: 'OS Detection', value: scan.os_detection || 'Not detected' },
-                  { icon: Info, label: 'MAC Address', value: scan.mac_address || 'Not available' },
-                  { icon: CheckCircle2, label: 'Scan Status', value: scan.status },
-                  { icon: Terminal, label: 'Scan Profile', value: profile?.label || scan.scan_type },
-                  { icon: Info, label: 'Start Time', value: formatDateTime(scan.start_time) },
-                  { icon: Info, label: 'End Time', value: scan.end_time ? formatDateTime(scan.end_time) : '—' },
-                  { icon: Info, label: 'Duration', value: scan.end_time ? formatDuration(scan.start_time, scan.end_time) : '—' },
-                  { icon: AlertTriangle, label: 'Total Findings', value: String(scan.findings.length) },
-                  { icon: Info, label: 'Open Ports', value: String(new Set(scan.findings.map(f => f.port)).size) },
-                  { icon: Shield, label: 'Overall Risk', value: scan.risk_rating || 'Unknown' },
+                  { icon: Server,       label: 'Target IP',     value: scan.target_ip },
+                  { icon: Cpu,          label: 'Hostname',      value: scan.hostname || 'Not resolved' },
+                  { icon: Shield,       label: 'OS Detection',  value: scan.os_detection || 'Not detected' },
+                  { icon: Info,         label: 'MAC Address',   value: scan.mac_address || 'Not available' },
+                  { icon: CheckCircle2, label: 'Scan Status',   value: scan.status },
+                  { icon: Terminal,     label: 'Scan Profile',  value: profile?.label || scan.scan_type },
+                  { icon: Info,         label: 'Start Time',    value: formatDateTime(scan.start_time) },
+                  { icon: Info,         label: 'End Time',      value: scan.end_time ? formatDateTime(scan.end_time) : '—' },
+                  { icon: Info,         label: 'Duration',      value: scan.end_time ? formatDuration(scan.start_time, scan.end_time) : '—' },
+                  { icon: AlertTriangle,label: 'Total Findings',value: String(scan.findings.length) },
+                  { icon: Info,         label: 'Open Ports',    value: String(new Set(scan.findings.map(f => f.port)).size) },
+                  { icon: Shield,       label: 'Overall Risk',  value: scan.risk_rating || 'Unknown' },
                 ].map(row => (
-                  <div key={row.label} className="flex items-start gap-3 p-3 bg-black/20 border border-slate-800 rounded-lg">
-                    <row.icon className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+                  <div
+                    key={row.label}
+                    className="flex items-start gap-3 p-3 border rounded-lg"
+                    style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-subtle)' }}
+                  >
+                    <row.icon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
                     <div>
-                      <div className="text-slate-500 text-xs font-mono">{row.label}</div>
-                      <div className="text-white text-sm font-medium mt-0.5">{row.value}</div>
+                      <div className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{row.label}</div>
+                      <div className="text-sm font-medium mt-0.5" style={{ color: 'var(--text-primary)' }}>{row.value}</div>
                     </div>
                   </div>
                 ))}
@@ -223,7 +328,7 @@ export default function ScanDetail() {
             {activeTab === 'raw' && (
               <div className="space-y-4">
                 <div className="bg-black border border-slate-800 rounded-lg p-4 font-mono text-sm">
-                  <div className="text-slate-500 text-xs mb-2 font-mono"># Backend: Node.js child_process.spawn (no shell injection risk)</div>
+                  <div className="text-slate-500 text-xs mb-2"># Backend: Node.js child_process.spawn (no shell injection risk)</div>
                   <div className="text-emerald-400">
                     <span className="text-slate-500">spawn(</span>
                     <span className="text-yellow-300">'/usr/bin/nmap'</span>

@@ -12,6 +12,7 @@ export interface Scan {
   progress?: number;
   findings_count?: number;
   risk_rating?: 'Critical' | 'High' | 'Medium' | 'Low' | 'Clean';
+  tags?: string[];
 }
 
 export interface Finding {
